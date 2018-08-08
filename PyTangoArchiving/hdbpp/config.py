@@ -97,129 +97,139 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                         t = self.get_db_config(manager=m,db_name=db_name)
                         host,user,passwd = t[1],t[2],t[3]
 
-        self.port = port
-        self.archivers = []
-        self.attributes = []
-        self.dedicated = {}
-        ArchivingDB.__init__(self,db_name,host,user,passwd,)
-        try:
-            self.get_manager()
-        except:
-            print('Unable to get manager')
-            
-    def get_db_config(self,manager='', db_name=''):
-        if not manager:
-            manager = self.get_manager(db_name).name()
-            
-        prop = get_device_property(manager,'LibConfiguration')
-        if prop:
-            config = dict((map(str.strip,l.split('=',1)) for l in prop))
-            db_name,host,user,passwd = \
-                [config.get(k) for k in 'dbname host user password'.split()]
-        else:
-            db_name = get_device_property(manager,'DbName') or ''
-            host = get_device_property(manager,'DbHost') or ''
-            user = get_device_property(manager,'DbUser') or ''
-            passwd = get_device_property(manager,'DbPassword') or ''
-              
-        return db_name,host,user,passwd
-        
-    @staticmethod
-    def get_all_managers():
-        return get_class_devices('HdbConfigurationManager')
-    
-    @staticmethod
-    def get_all_archivers():
-        return get_class_devices('HdbEventSubscriber')
-      
-    def get_manager(self, db_name='', prop=''):
-        if not getattr(self,'manager',None):
-            db_name = db_name or getattr(self,'db_name','')
-            self.manager = ''
-            managers = self.get_all_managers()
-            for m in managers:
-                if db_name:
-                    prop = get_device_property(m,'DbName')
-                    if not prop:
-                        prop = str(get_device_property(m,'LibConfiguration'))
-                if not db_name or db_name in prop:
-                    self.manager = m
-                    break
-                    
-        return get_device(self.manager) if self.manager else None
-      
-    @Cached(depth=10,expire=60.)
-    def get_archived_attributes(self,search=''):
-        attrs = []
-        archs = self.get_manager().ArchiverList
-        map(attrs.extend,
-            self.get_archivers_attributes(
-            archs,full=False,from_db=False).values())
-        if search == '': self.attributes = attrs
-        return attrs
-        ## DB API
-        ##r = sorted(str(a).lower().replace('tango://','') 
-        ##THIS METHOD RETURNS ONLY 1000 ATTRIBUTES!!!
-        #r = sorted(parse_tango_model(a,fqdn=True).normalname #for a in self.get_manager().AttributeSearch(search))
-    
-    @Cached(depth=2,expire=60.)
-    def get_attributes(self,active=None):
-        """
-        Alias for Reader API
-        @TODO active argument not implemented
-        """
-        if active:
-            return self.get_archived_attributes()
-        else:
-            return self.get_attribute_names(False)
-    
-    def get_attributes_failed(self,regexp='*',timeout=3600,from_db=True):
-        if from_db:
-            timeout = fn.now()-timeout
-            attrs = self.get_attributes(True)
-            attrs = fn.filtersmart(attrs,regexp)
-            print('get_attributes_failed([%d])' % len(attrs))
-            print(attrs)
-            vals = self.load_last_values(attrs)
-            return sorted(t for t in vals if not t[1] or
-                         t[1][0] < timeout)
-        else:
-            # Should inspect the Subscribers Error Lists
-            raise Exception('NotImplemented')
-    
-    @Cached(expire=60.)
-    def get_archivers(self):
-        #return list(self.tango.get_device_property(self.manager,'ArchiverList')['ArchiverList'])
-        if self.manager and check_device(self.manager):
-          return self.get_manager().ArchiverList
-        else:
-          raise Exception('%s Manager not running'%self.manager)
-      
-    @Cached(expire=60.)
-    def get_archivers_attributes(self,archs=None,from_db=True,full=False):
-        archs = archs or self.get_archivers()
-        dedicated = fn.defaultdict(list)
-        if from_db:
-            for a in archs:
-                dedicated[a] = [str(l) for l in 
-                    get_device_property(a,'AttributeList')]
-                if not full:
-                    dedicated[a] = [str(l).split(';')[0] for l in 
-                        dedicated[a]]
-        else:
-            for a in archs:
-                try:
-                    dedicated[a].extend(get_device(a).AttributeList)
-                except:
-                    dedicated[a] = []
-                    
-        self.dedicated.update(dedicated)
-        return dedicated
-    
-    @Cached(depth=1000,expire=60.)
-    def get_attribute_archiver(self,attribute):
-        if not self.dedicated:
-            self.get_archivers_attributes()
+            self.port = port
+            self.archivers = []
+            self.attributes = []
+            self.dedicated = {}
+
+            self.cass = backend.lower().__eq__("cassandra")
+
+            if not self.cass:
+
+                ArchivingDB.__init__(self, db_name, host, user, passwd,)
+            else:
+
+                FriendlyCassDB.__init__(self, db_name, host, user, passwd)
+
+            try:
+
+                self.get_manager()
+            except:
+                print('Unable to get manager')
+
+        def get_db_config(self,manager='', db_name=''):
+            if not manager:
+                manager = self.get_manager(db_name).name()
+
+            prop = get_device_property(manager,'LibConfiguration')
+            if prop:
+                config = dict((map(str.strip,l.split('=',1)) for l in prop))
+                db_name,host,user,passwd = \
+                    [config.get(k) for k in 'dbname host user password'.split()]
+            else:
+                db_name = get_device_property(manager,'DbName') or ''
+                host = get_device_property(manager,'DbHost') or ''
+                user = get_device_property(manager,'DbUser') or ''
+                passwd = get_device_property(manager,'DbPassword') or ''
+
+            return db_name,host,user,passwd
+
+        @staticmethod
+        def get_all_managers():
+            return get_class_devices('HdbConfigurationManager')
+
+        @staticmethod
+        def get_all_archivers():
+            return get_class_devices('HdbEventSubscriber')
+
+        def get_manager(self, db_name='', prop=''):
+            if not getattr(self,'manager',None):
+                db_name = db_name or getattr(self,'db_name','')
+                self.manager = ''
+                managers = self.get_all_managers()
+                for m in managers:
+                    if db_name:
+                        prop = get_device_property(m,'DbName')
+                        if not prop:
+                            prop = str(get_device_property(m,'LibConfiguration'))
+                    if not db_name or db_name in prop:
+                        self.manager = m
+                        break
+
+            return get_device(self.manager) if self.manager else None
+
+        @Cached(depth=10,expire=60.)
+        def get_archived_attributes(self,search=''):
+            attrs = []
+            archs = self.get_manager().ArchiverList
+            map(attrs.extend,
+                self.get_archivers_attributes(
+                archs,full=False,from_db=False).values())
+            if search == '': self.attributes = attrs
+            return attrs
+            ## DB API
+            ##r = sorted(str(a).lower().replace('tango://','')
+            ##THIS METHOD RETURNS ONLY 1000 ATTRIBUTES!!!
+            #r = sorted(parse_tango_model(a,fqdn=True).normalname #for a in self.get_manager().AttributeSearch(search))
+
+        @Cached(depth=2,expire=60.)
+        def get_attributes(self,active=None):
+            """
+            Alias for Reader API
+            @TODO active argument not implemented
+            """
+            if active:
+                return self.get_archived_attributes()
+            else:
+                return self.get_attribute_names(False)
+
+        def get_attributes_failed(self,regexp='*',timeout=3600,from_db=True):
+            if from_db:
+                timeout = fn.now()-timeout
+                attrs = self.get_attributes(True)
+                attrs = fn.filtersmart(attrs,regexp)
+                print('get_attributes_failed([%d])' % len(attrs))
+                print(attrs)
+                vals = self.load_last_values(attrs)
+                return sorted(t for t in vals if not t[1] or
+                             t[1][0] < timeout)
+            else:
+                # Should inspect the Subscribers Error Lists
+                raise Exception('NotImplemented')
+
+        @Cached(expire=60.)
+        def get_archivers(self):
+            #return list(self.tango.get_device_property(self.manager,'ArchiverList')['ArchiverList'])
+            if self.manager and check_device(self.manager):
+              return self.get_manager().ArchiverList
+            else:
+              raise Exception('%s Manager not running'%self.manager)
+
+        @Cached(expire=60.)
+        def get_archivers_attributes(self,archs=None,from_db=True,full=False):
+            archs = archs or self.get_archivers()
+            dedicated = fn.defaultdict(list)
+            if from_db:
+                for a in archs:
+                    dedicated[a] = [str(l) for l in
+                        get_device_property(a,'AttributeList')]
+                    if not full:
+                        dedicated[a] = [str(l).split(';')[0] for l in
+                            dedicated[a]]
+            else:
+                for a in archs:
+                    try:
+                        dedicated[a].extend(get_device(a).AttributeList)
+                    except:
+                        dedicated[a] = []
+
+            self.dedicated.update(dedicated)
+            return dedicated
+
+        @Cached(depth=1000,expire=60.)
+        def get_attribute_archiver(self,attribute):
+            if not self.dedicated:
+                self.get_archivers_attributes()
 
             m = parse_tango_model(attribute,fqdn=True)
             for k,v in self.dedicated.items():
