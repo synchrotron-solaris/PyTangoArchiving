@@ -42,45 +42,60 @@ def get_search_model(model):
     model = clsub('[:][0-9]+','%:%',model)
     return model
 
-class HDBpp(ArchivingDB,SingletonMap):
-    
-    def __init__(self,db_name='',host='',user='',
-                 passwd='', manager='',
-                 other=None, port = '3306'):
-        """
-        Configuration can be loaded from PyTangoArchiving.Schemas,
-        an HdbConfigurationManager or another DB object.
-        """
-        assert db_name or manager, 'db_name/manager argument is required!'
-        self.tango = get_database()
 
-        if not all((db_name,host,user,passwd)):
-            if other:
-                print('HDBpp(): Loading from DB object')
-                db_name,host,user,passwd = \
-                    other.db_name,other.host,other.user,other.passwd
-            elif manager:
-                print('HDBpp(): Loading from manager')
-                d,h,u,p = self.get_db_config(manager=manager,db_name=db_name)
-                db_name = db_name or d
-                host = host or h    
-                user = user or u
-                passwd = passwd or p                
-            else:
-                sch = Schemas.getSchema(db_name)
-                if sch:
-                    print('HDBpp(): Loading from Schemas')
-                    print(sch)
-                    db_name = sch.get('dbname',sch.get('db_name'))
-                    host = host or sch.get('host')
-                    user = user or sch.get('user')
-                    passwd = passwd or sch.get('passwd')
-                    port = port or sch.get('port')
-                elif not manager:
-                    print('HDBpp(): Searching for manager')
-                    m = self.get_manager(db_name)
-                    t = self.get_db_config(manager=m,db_name=db_name)
-                    host,user,passwd = t[1],t[2],t[3]
+def chose_backend(_backend):
+
+    if _backend.lower().__eq__("mysql"):
+
+        return ArchivingDB
+    elif _backend.lower().__eq__("cassandra"):
+
+        return FriendlyCassDB
+    else:
+        raise Exception("Backend not recognize")
+
+
+def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port='', backend="mysql"):
+
+    class HDBppClass(chose_backend(backend), SingletonMap):
+
+        def __init__(self,db_name='',host='',user='',
+                     passwd='', manager='',
+                     other=None, port='3306'):
+            """
+            Configuration can be loaded from PyTangoArchiving.Schemas,
+            an HdbConfigurationManager or another DB object.
+            """
+            assert db_name or manager, 'db_name/manager argument is required!'
+            self.tango = get_database()
+
+            if not all((db_name,host,user,passwd)):
+                if other:
+                    print('HDBpp(): Loading from DB object')
+                    db_name,host,user,passwd = \
+                        other.db_name,other.host,other.user,other.passwd
+                elif manager:
+                    print('HDBpp(): Loading from manager')
+                    d,h,u,p = self.get_db_config(manager=manager,db_name=db_name)
+                    db_name = db_name or d
+                    host = host or h
+                    user = user or u
+                    passwd = passwd or p
+                else:
+                    sch = Schemas.getSchema(db_name)
+                    if sch:
+                        print('HDBpp(): Loading from Schemas')
+                        print(sch)
+                        db_name = sch.get('dbname',sch.get('db_name'))
+                        host = host or sch.get('host')
+                        user = user or sch.get('user')
+                        passwd = passwd or sch.get('passwd')
+                        port = port or sch.get('port')
+                    elif not manager:
+                        print('HDBpp(): Searching for manager')
+                        m = self.get_manager(db_name)
+                        t = self.get_db_config(manager=m,db_name=db_name)
+                        host,user,passwd = t[1],t[2],t[3]
 
         self.port = port
         self.archivers = []
@@ -206,244 +221,244 @@ class HDBpp(ArchivingDB,SingletonMap):
         if not self.dedicated:
             self.get_archivers_attributes()
 
-        m = parse_tango_model(attribute,fqdn=True)
-        for k,v in self.dedicated.items():
-            for l in v:
-                if m.fullname in l.split(';'):
-                    return k
-        return None
-    
-    def start_servers(self,host=''):
-        import fandango.servers
-        if not self.manager: self.get_manager()
-        astor = fandango.servers.Astor(self.manager)
-        astor.start_servers(host=(host or self.db_host))
-        time.sleep(1.)
-        astor.load_from_devs_list(self.get_archivers())
-        astor.start_servers(host=(host or self.db_host))
-        
-    def start_devices(self,regexp = '*', force = False, do_init = False):
-        devs = fn.tango.get_class_devices('HdbEventSubscriber')
-        if regexp:
-            devs = fn.filtersmart(devs,regexp)
-        off = sorted(set(d for d in devs if not fn.check_device(d)))
+            m = parse_tango_model(attribute,fqdn=True)
+            for k,v in self.dedicated.items():
+                for l in v:
+                    if m.fullname in l.split(';'):
+                        return k
+            return None
 
-        if off:
-            astor = fn.Astor()
-            astor.load_from_devs_list(list(off))
-            astor.stop_servers()
-            fn.wait(3.)
-            astor.start_servers()
-            fn.wait(3.)
+        def start_servers(self,host=''):
+            import fandango.servers
+            if not self.manager: self.get_manager()
+            astor = fandango.servers.Astor(self.manager)
+            astor.start_servers(host=(host or self.db_host))
+            time.sleep(1.)
+            astor.load_from_devs_list(self.get_archivers())
+            astor.start_servers(host=(host or self.db_host))
 
-        for d in devs:
+        def start_devices(self,regexp = '*', force = False, do_init = False):
+            devs = fn.tango.get_class_devices('HdbEventSubscriber')
+            if regexp:
+                devs = fn.filtersmart(devs,regexp)
+            off = sorted(set(d for d in devs if not fn.check_device(d)))
+
+            if off:
+                astor = fn.Astor()
+                astor.load_from_devs_list(list(off))
+                astor.stop_servers()
+                fn.wait(3.)
+                astor.start_servers()
+                fn.wait(3.)
+
+            for d in devs:
+                try:
+                    dp = fn.get_device(d)
+                    if do_init:
+                        dp.init()
+                    if force or dp.attributenumber != dp.attributestartednumber:
+                        off.append(d)
+                        dp.start()
+                except Exception,e:
+                    self.warning('start_archivers(%s) failed: %s' % (d,e))
+
+            return off
+
+        def add_archiving_manager(self,srv,dev):
+            if '/' not in srv: srv = 'hdb++cm-srv/'+srv
+            add_new_device(srv,'HdbConfigurationManager',dev)
+            prev = get_device_property(dev,'ArchiverList') or []
+            put_device_property(dev,'ArchiverList',prev)
+            put_device_property(dev,'ArchiveName','MySQL')
+            put_device_property(dev,'DbHost',self.host)
+            put_device_property(dev,'DbName',self.db_name)
+            put_device_property(dev,'DbUser',self.user)
+            put_device_property(dev,'DbPassword',self.passwd)
+            put_device_property(dev,'DbPort','3306')
+            put_device_property(dev,'LibConfiguration',[
+              'user='+self.user,
+              'password='+self.passwd,
+              'port='+self.port,
+              'host='+self.host,
+              'dbname='+self.db_name,])
+            self.get_manager()
+            return dev
+
+        def add_event_subscriber(self,srv,dev,libpath=''):
+            if '/' not in srv: srv = 'hdb++es-srv/'+srv
+            add_new_device(srv,'HdbEventSubscriber',dev)
+            manager,dp = self.manager,self.get_manager()
+            props = Struct(get_matching_device_properties(manager,'*'))
+            prev = get_device_property(dev,'AttributeList') or []
+            put_device_property(dev,'AttributeList',prev)
+            #put_device_property(dev,'DbHost',self.host)
+            #put_device_property(dev,'DbName',self.db_name)
+            #put_device_property(dev,'DbUser',self.user)
+            #put_device_property(dev,'DbPassword',self.passwd)
+            #put_device_property(dev,'DbPort','3306')
+            #put_device_property(dev,'DbStartArchivingAtStartup','true')
+
+            libpath = (libpath or \
+                    '/homelocal/sicilia/src/hdbpp.git/lib/libhdb++mysql.so')
+            put_device_property(dev,'LibConfiguration',[
+              'user='+self.user,
+              'password='+self.passwd,
+              'port='+getattr(self,'port','3306'),
+              'host='+self.host,
+              'dbname='+self.db_name,
+              'libname='+libpath,
+              'ligthschema=1',
+              ])
+            if 'ArchiverList' not in props:
+                props.ArchiverList = []
+
+            dev = parse_tango_model(dev,fqdn=True).fullname
+            #put_device_property(manager,'ArchiverList',
+                                #list(set(list(props.ArchiverList)+[dev])))
+            print(dev)
+            dp.ArchiverAdd(dev)
+            return dev
+
+        def add_attributes(self,attributes,*args,**kwargs):
+            """
+            Call add_attribute sequentially with a 1s pause between calls
+            :param start: True by default, will force Start() in related archivers
+            See add_attribute? for more help on arguments
+            """
             try:
-                dp = fn.get_device(d)
-                if do_init:
-                    dp.init()
-                if force or dp.attributenumber != dp.attributestartednumber:
-                    off.append(d)
-                    dp.start()
+              start = kwargs.get('start',True)
+              for a in attributes:
+                kwargs['start'] = False #Avoid recursive start
+                self.add_attribute(a,*args,**kwargs)
+              time.sleep(3.)
+
+              if start:
+                archs = set(map(self.get_attribute_archiver,attributes))
+                for h in archs:
+                    self.info('%s.Start()' % h)
+                    fn.get_device(h).Start()
+
             except Exception,e:
-                self.warning('start_archivers(%s) failed: %s' % (d,e))
-                
-        return off        
-    
-    def add_archiving_manager(self,srv,dev):
-        if '/' not in srv: srv = 'hdb++cm-srv/'+srv
-        add_new_device(srv,'HdbConfigurationManager',dev)
-        prev = get_device_property(dev,'ArchiverList') or []
-        put_device_property(dev,'ArchiverList',prev)
-        put_device_property(dev,'ArchiveName','MySQL')
-        put_device_property(dev,'DbHost',self.host)
-        put_device_property(dev,'DbName',self.db_name)
-        put_device_property(dev,'DbUser',self.user)
-        put_device_property(dev,'DbPassword',self.passwd)
-        put_device_property(dev,'DbPort','3306')
-        put_device_property(dev,'LibConfiguration',[
-          'user='+self.user,
-          'password='+self.passwd,
-          'port='+self.port,
-          'host='+self.host,
-          'dbname='+self.db_name,])
-        self.get_manager()
-        return dev
+                print('add_attribute(%s) failed!: %s'%(a,traceback.print_exc()))
+            return
 
-    def add_event_subscriber(self,srv,dev,libpath=''):
-        if '/' not in srv: srv = 'hdb++es-srv/'+srv
-        add_new_device(srv,'HdbEventSubscriber',dev)
-        manager,dp = self.manager,self.get_manager()
-        props = Struct(get_matching_device_properties(manager,'*'))
-        prev = get_device_property(dev,'AttributeList') or []
-        put_device_property(dev,'AttributeList',prev)
-        #put_device_property(dev,'DbHost',self.host)
-        #put_device_property(dev,'DbName',self.db_name)
-        #put_device_property(dev,'DbUser',self.user)
-        #put_device_property(dev,'DbPassword',self.passwd)
-        #put_device_property(dev,'DbPort','3306')
-        #put_device_property(dev,'DbStartArchivingAtStartup','true')
-        
-        libpath = (libpath or \
-                '/homelocal/sicilia/src/hdbpp.git/lib/libhdb++mysql.so')
-        put_device_property(dev,'LibConfiguration',[
-          'user='+self.user,
-          'password='+self.passwd,
-          'port='+getattr(self,'port','3306'),
-          'host='+self.host,
-          'dbname='+self.db_name,
-          'libname='+libpath,
-          'ligthschema=1',
-          ])
-        if 'ArchiverList' not in props:
-            props.ArchiverList = []
-            
-        dev = parse_tango_model(dev,fqdn=True).fullname
-        #put_device_property(manager,'ArchiverList',
-                            #list(set(list(props.ArchiverList)+[dev])))
-        print(dev)
-        dp.ArchiverAdd(dev)
-        return dev
-    
-    def add_attributes(self,attributes,*args,**kwargs):
-        """
-        Call add_attribute sequentially with a 1s pause between calls
-        :param start: True by default, will force Start() in related archivers
-        See add_attribute? for more help on arguments
-        """
-        try:
-          start = kwargs.get('start',True)
-          for a in attributes:
-            kwargs['start'] = False #Avoid recursive start
-            self.add_attribute(a,*args,**kwargs)
-          time.sleep(3.)
-            
-          if start:
-            archs = set(map(self.get_attribute_archiver,attributes))
-            for h in archs:
-                self.info('%s.Start()' % h)
-                fn.get_device(h).Start()
-                
-        except Exception,e:
-            print('add_attribute(%s) failed!: %s'%(a,traceback.print_exc()))
-        return
+        def add_attribute(self,attribute,archiver,period=0,
+                          rel_event=None,per_event=300000,abs_event=None,
+                          code_event=False, ttl=None, start=False):
+            """
+            set _event arguments to -1 to ignore them and not modify the database
 
-    def add_attribute(self,attribute,archiver,period=0,
-                      rel_event=None,per_event=300000,abs_event=None,
-                      code_event=False, ttl=None, start=False):
-        """
-        set _event arguments to -1 to ignore them and not modify the database
-        
-        
-        """
-        attribute = parse_tango_model(attribute,fqdn=True).fullname
-        self.info('add_attribute(%s)'%attribute)
-        config = get_attribute_config(attribute)
-        #if 'spectrum' in str(config.data_format).lower():
-          #raise Exception('Arrays not supported yet!')
-        data_type = str(PyTango.CmdArgType.values[config.data_type])
-        if not self.manager: 
-          return False
-      
-        try:
-          d = self.get_manager()
-          d.lock()
-          print('SetAttributeName: %s'%attribute)
-          d.write_attribute('SetAttributeName',attribute)
-          time.sleep(0.2)
-          if period>0:
-            d.write_attribute('SetPollingPeriod',period)
-          if per_event not in (None,-1):
-            d.write_attribute('SetPeriodEvent',per_event)
 
-          if not any((abs_event,rel_event)):
-            if re.search("short|long",data_type.lower()):
-              abs_event = 1
-            elif not re.search("bool|string",data_type.lower()):
-              rel_event = 1e-2
-          if abs_event not in (None,-1):
-            print('SetAbsoluteEvent: %s'%abs_event)
-            d.write_attribute('SetAbsoluteEvent',abs_event)
-          if rel_event not in (None,-1):
-            d.write_attribute('SetRelativeEvent',rel_event)
-          if ttl not in (None,-1):
-            d.write_attribute('SetTTL',ttl)
-            
-          d.write_attribute('SetCodePushedEvent',code_event)
+            """
+            attribute = parse_tango_model(attribute,fqdn=True).fullname
+            self.info('add_attribute(%s)'%attribute)
+            config = get_attribute_config(attribute)
+            #if 'spectrum' in str(config.data_format).lower():
+              #raise Exception('Arrays not supported yet!')
+            data_type = str(PyTango.CmdArgType.values[config.data_type])
+            if not self.manager:
+              return False
 
-          d.write_attribute('SetArchiver',archiver)
-          time.sleep(.2)
-          d.AttributeAdd()
-          
-          if start:
-              try:
-                arch = archiver # self.get_attribute_archiver(attribute)
-                self.warning('%s.Start()' % (arch))
-                fn.get_device(arch).Start()
-              except:
-                traceback.print_exc()
-              
-        except Exception,e:
-          if 'already archived' not in str(e).lower():
-            self.error('add_attribute(%s,%s,%s): %s'
-                       %(attribute,archiver,period,
-                         traceback.format_exc().replace('\n','')))
-          else:
-            self.warning('%s already archived!' % attribute)
-          return False
-        finally:
-          #self.warning('unlocking %s ..'%self.manager)
-          d.unlock()
-        print('%s added'%attribute)
-        
-    def is_attribute_archived(self,attribute,active=None,cached=True):
-        # @TODO active argument not implemented
-        model = parse_tango_model(attribute,fqdn=True)
-        if cached:
-            self.get_archived_attributes()
-            if any(m in self.attributes for m in (attribute,model.fullname,model.normalname)):
-                return model.fullname
+            try:
+              d = self.get_manager()
+              d.lock()
+              print('SetAttributeName: %s'%attribute)
+              d.write_attribute('SetAttributeName',attribute)
+              time.sleep(0.2)
+              if period>0:
+                d.write_attribute('SetPollingPeriod',period)
+              if per_event not in (None,-1):
+                d.write_attribute('SetPeriodEvent',per_event)
+
+              if not any((abs_event,rel_event)):
+                if re.search("short|long",data_type.lower()):
+                  abs_event = 1
+                elif not re.search("bool|string",data_type.lower()):
+                  rel_event = 1e-2
+              if abs_event not in (None,-1):
+                print('SetAbsoluteEvent: %s'%abs_event)
+                d.write_attribute('SetAbsoluteEvent',abs_event)
+              if rel_event not in (None,-1):
+                d.write_attribute('SetRelativeEvent',rel_event)
+              if ttl not in (None,-1):
+                d.write_attribute('SetTTL',ttl)
+
+              d.write_attribute('SetCodePushedEvent',code_event)
+
+              d.write_attribute('SetArchiver',archiver)
+              time.sleep(.2)
+              d.AttributeAdd()
+
+              if start:
+                  try:
+                    arch = archiver # self.get_attribute_archiver(attribute)
+                    self.warning('%s.Start()' % (arch))
+                    fn.get_device(arch).Start()
+                  except:
+                    traceback.print_exc()
+
+            except Exception,e:
+              if 'already archived' not in str(e).lower():
+                self.error('add_attribute(%s,%s,%s): %s'
+                           %(attribute,archiver,period,
+                             traceback.format_exc().replace('\n','')))
+              else:
+                self.warning('%s already archived!' % attribute)
+              return False
+            finally:
+              #self.warning('unlocking %s ..'%self.manager)
+              d.unlock()
+            print('%s added'%attribute)
+
+        def is_attribute_archived(self,attribute,active=None,cached=True):
+            # @TODO active argument not implemented
+            model = parse_tango_model(attribute,fqdn=True)
+            if cached:
+                self.get_archived_attributes()
+                if any(m in self.attributes for m in (attribute,model.fullname,model.normalname)):
+                    return model.fullname
+                else:
+                    return False
             else:
-                return False
-        else:
-            d = self.get_manager()
-            attributes = d.AttributeSearch(model.fullname)
-            a = [a for a in attributes if a.lower().endswith(attribute.lower())]
-            if len(attributes)>1: 
-                raise Exception('MultipleAttributesMatched!')
-            if len(attributes)==1:
-                return attributes[0]
-            else:
-                return False
-          
-    def start_archiving(self,attribute,archiver,period=0,
-                      rel_event=None,per_event=300000,abs_event=None,
-                      code_event=False, ttl=None, start=False):
-        """
-        See HDBpp.add_attribute.__doc__ for a full description of arguments
-        """
-        try:
-            if isSequence(attribute):
-                for attr in attribute:
-                    self.start_archiving(attr,*args,**kwargs)
-                    time.sleep(1.)
-            else:
-                self.info('start_archiving(%s)'%attribute)
                 d = self.get_manager()
-                fullname = parse_tango_model(attribute,fqdn=True).fullname
-                if not self.is_attribute_archived(attribute):
-                    self.add_attribute(fullname,archiver=archiver,
-                        period=period, rel_event=rel_event, 
-                        per_event=per_event, abs_event=abs_event,
-                        code_event=code_event, ttl=ttl, 
-                        start=start)
-                    time.sleep(5.)
-                    #fullname = self.is_attribute_archived(attribute,cached=0)
-                d.AttributeStart(fullname)
-                return True
-        except Exception,e:
-            self.error('start_archiving(%s): %s'
-                        %(attribute,traceback.format_exc().replace('\n','')))
-        return False        
+                attributes = d.AttributeSearch(model.fullname)
+                a = [a for a in attributes if a.lower().endswith(attribute.lower())]
+                if len(attributes)>1:
+                    raise Exception('MultipleAttributesMatched!')
+                if len(attributes)==1:
+                    return attributes[0]
+                else:
+                    return False
+
+        def start_archiving(self,attribute,archiver,period=0,
+                          rel_event=None,per_event=300000,abs_event=None,
+                          code_event=False, ttl=None, start=False):
+            """
+            See HDBpp.add_attribute.__doc__ for a full description of arguments
+            """
+            try:
+                if isSequence(attribute):
+                    for attr in attribute:
+                        self.start_archiving(attr,*args,**kwargs)
+                        time.sleep(1.)
+                else:
+                    self.info('start_archiving(%s)'%attribute)
+                    d = self.get_manager()
+                    fullname = parse_tango_model(attribute,fqdn=True).fullname
+                    if not self.is_attribute_archived(attribute):
+                        self.add_attribute(fullname,archiver=archiver,
+                            period=period, rel_event=rel_event,
+                            per_event=per_event, abs_event=abs_event,
+                            code_event=code_event, ttl=ttl,
+                            start=start)
+                        time.sleep(5.)
+                        #fullname = self.is_attribute_archived(attribute,cached=0)
+                    d.AttributeStart(fullname)
+                    return True
+            except Exception,e:
+                self.error('start_archiving(%s): %s'
+                            %(attribute,traceback.format_exc().replace('\n','')))
+            return False
 
     def get_attribute_ID(self,attr):
         # returns only 1 ID
@@ -531,29 +546,29 @@ class HDBpp(ArchivingDB,SingletonMap):
               #buff = [result[-1]]
             #buff.append(v)
 
-        #print(tmin,tmax,N,interval,len(values),len(result),method)
-        #return result
-        
-    def decimate_table(att_id,table):
-        """
-        @TODO
-        """
-        hours = [t0+i*3600 for i in range(24*30)]
-        days = [t0+i*86400 for i in range(30)]
-        dvalues = {}
-        q = ("select count(*) from %s where att_conf_id = %d "
-            "and data_time between '%s' and '%s'")
-        for d in days:
-            s = fn.time2str(d)
-            q = hdbpp.Query(q%(table,att_id,s,fn.time2str(d+86400))
-                            +" and (data_time %% 5) < 2;")
-        sorted(values.items())
-        3600/5
-        for h in hours:
-            s = fn.time2str(h)
-            q = hdbpp.Query("select count(*) from att_scalar_devdouble_ro "
-                "where att_conf_id = 1 and data_time between '%s' and '%s' "
-                "and (data_time %% 5) < 2;"%(s,fn.time2str(h+3600)))
+            #print(tmin,tmax,N,interval,len(values),len(result),method)
+            #return result
+
+        def decimate_table(att_id,table):
+            """
+            @TODO
+            """
+            hours = [t0+i*3600 for i in range(24*30)]
+            days = [t0+i*86400 for i in range(30)]
+            dvalues = {}
+            q = ("select count(*) from %s where att_conf_id = %d "
+                "and data_time between '%s' and '%s'")
+            for d in days:
+                s = fn.time2str(d)
+                q = hdbpp.Query(q%(table,att_id,s,fn.time2str(d+86400))
+                                +" and (data_time %% 5) < 2;")
+            sorted(values.items())
+            3600/5
+            for h in hours:
+                s = fn.time2str(h)
+                q = hdbpp.Query("select count(*) from att_scalar_devdouble_ro "
+                    "where att_conf_id = 1 and data_time between '%s' and '%s' "
+                    "and (data_time %% 5) < 2;"%(s,fn.time2str(h+3600)))
 
       
     def get_last_attribute_values(self,table,n=1,check_table=False):
@@ -717,27 +732,35 @@ class HDBpp(ArchivingDB,SingletonMap):
             # why?
             self.getCursor(klass=MySQLdb.cursors.SSCursor)
 
-        self.warning('result arranged [%d]'%len(result))            
-        return result
-        
-    def get_attributes_values(self,tables='',start_date=None,stop_date=None,
-                desc=False,N=0,unixtime=True,extra_columns='quality',
-                decimate=0,human=False):
-        
-        if not fn.isSequence(tables):
-            tables = self.get_archived_attributes(tables)
-            
-        return dict((t,self.get_attribute_values(t,start_date,stop_date,desc,
-                N,unixtime,extra_columns,decimate,human))
-                for t in tables)
+            self.warning('result arranged [%d]'%len(result))
+            return result
 
-    def get_attribute_rows(self,attribute,start_date=0,stop_date=0):
-        aid,tid,table = self.get_attr_id_type_table(attribute)
-        if start_date and stop_date:
-            dates = map(time2str,(start_date,stop_date))
-            where = "and data_time between '%s' and '%s'" % dates
-        else:
-            where = ''
-        r = self.Query('select count(*) from %s where att_conf_id = %s'
-                          % ( table, aid) + where)
-        return r[0][0] if r else 0
+        def get_attributes_values(self,tables='',start_date=None,stop_date=None,
+                    desc=False,N=0,unixtime=True,extra_columns='quality',
+                    decimate=0,human=False):
+
+            if not fn.isSequence(tables):
+                tables = self.get_archived_attributes(tables)
+
+            return dict((t,self.get_attribute_values(t,start_date,stop_date,desc,
+                    N,unixtime,extra_columns,decimate,human))
+                    for t in tables)
+
+        def get_attribute_rows(self,attribute,start_date=0,stop_date=0):
+            aid,tid,table = self.get_attr_id_type_table(attribute)
+            if start_date and stop_date:
+                dates = map(time2str,(start_date,stop_date))
+                where = "and data_time between '%s' and '%s'" % dates
+            else:
+                where = ''
+            r = self.Query('select count(*) from %s where att_conf_id = %s'
+                              % ( table, aid) + where)
+            return r[0][0] if r else 0
+
+    try:
+
+        return HDBppClass(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port)
+    except Exception:
+
+        return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
+                     backend="cassandra" if backend is "mysql" else "mysql")
