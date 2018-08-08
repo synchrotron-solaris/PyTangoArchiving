@@ -21,20 +21,20 @@
 ## along with this program; if not, see <http://www.gnu.org/licenses/>.
 #############################################################################
 
-import PyTangoArchiving
 from PyTangoArchiving.dbs import ArchivingDB
-from PyTangoArchiving.common import CommonAPI
 from PyTangoArchiving.reader import Reader
 from PyTangoArchiving.utils import CatchedAndLogged
 from PyTangoArchiving.schemas import Schemas
 
 import fandango as fn
-from fandango.objects import SingletonMap, Cached
+from fandango.objects import SingletonMap
 from fandango.tango import *
+from fandango.db import FriendlyCassDB
+
 import MySQLdb,traceback,re
-from PyTango import AttrQuality
 
 __test__ = {}
+
 
 def get_search_model(model):
     if model.count(':')<2:
