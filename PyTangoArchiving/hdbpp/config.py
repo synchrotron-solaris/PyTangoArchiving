@@ -470,91 +470,103 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                             %(attribute,traceback.format_exc().replace('\n','')))
             return False
 
-    def get_attribute_ID(self,attr):
-        # returns only 1 ID
-        return self.get_attribute_IDs(attr,as_dict=0)[0][0]
-      
-    def get_attributes_IDs(self,name='%',as_dict=1):
-        # returns all matching IDs
-        name = name.replace('*','%')
-        ids = self.Query("select att_name,att_conf_id from att_conf "\
-            +"where att_name like '%s'"%get_search_model(name))
-        if not ids: return None
-        elif not as_dict: return ids
-        else: return dict(ids)
-      
-    def get_attribute_names(self,active=False):
-        if not active:
-            return [a[0].lower() for a 
-                in self.Query('select att_name from att_conf')]
-        else:
-            return self.get_archived_attributes()
-    
-    def get_attribute_modes(self,attr):
-        aid,tid,table = self.get_attr_id_type_table(attr)
-        return {'ID':aid, 'MODE_E':True}
-      
-    def get_table_name(self,attr):
-        return get_attr_id_type_table(attr)
-      
-    def get_attr_id_type_table(self,attr):
-        if fn.isNumber(attr):
-            where = 'att_conf_id = %s'%attr
-        else:
-            where = "att_name like '%s'"%get_search_model(attr)
-        q = "select att_conf_id,att_conf_data_type_id from att_conf where %s"\
-                %where
-        ids = self.Query(q)
-        self.debug(str((q,ids)))
-        if not ids: 
-            return None,None,''
-        
-        aid,tid = ids[0]
-        table = self.Query("select data_type from att_conf_data_type "\
-            +"where att_conf_data_type_id = %s"%tid)[0][0]
-        return aid,tid,'att_'+table
-      
-    def set_attr_event_config(self,attr,polling=0,abs_event=0,
-                              per_event=0,rel_event=0):
-        ac = get_attribute_config(attr)
-        raise Exception('@TODO')
-      
-    #def get_default_archiving_modes(self,attr):
-        #if isString(attr) and '/' in attr:
-          #attr = read_attribute(attr)
-          #pytype = type(attr)
-          
-    def get_attributes_by_table(self,table=''):
-        if table:
-          return self.Query("select att_name from att_conf,att_conf_data_type where data_type like '%s'"+
-                  " and att_conf.att_conf_data_type_id = att_conf_data_type.att_conf_data_type_id")
-        else:
-          types = self.Query("select data_type,att_conf_data_type_id from att_conf_data_type")
-          return dict((t,self.Query("select att_name from att_conf where att_conf_data_type_id = %s"%i))
-                      for t,i in types)
-          
-    #@staticmethod
-    #def decimate_values(values,N=540,method=None):
-        #"""
-        #values must be a sorted (time,...) array
-        #it will be decimated in N equal time intervals 
-        #if method is not provided, only the first value of each interval will be kept
-        #if method is given, it will be applied to buffer to choose the value to keep
-        #first value of buffer will always be the last value kept
-        #"""
-        #tmin,tmax = sorted((values[0][0],values[-1][0]))
-        #result,buff = [values[0]],[values[0]]
-        #interval = float(tmax-tmin)/N
-        #if not method:
-          #for v in values:
-            #if v[0]>=(interval+float(result[-1][0])):
-              #result.append(v)
-        #else:
-          #for v in values:
-            #if v[0]>=(interval+float(result[-1][0])):
-              #result.append(method(buff))
-              #buff = [result[-1]]
-            #buff.append(v)
+        def get_attribute_ID(self,attr):
+            # returns only 1 ID
+
+            if self.cass:
+                # TO-DO: SOLVE PROBLEM WITH METHOD get_attriutes_IDs and use this method!
+                return self.Query("select att_name,att_conf_id from att_conf "
+                                  "where att_name ='%s' ALLOW FILTERING" % attr)
+
+            else:
+
+                return self.get_attribute_IDs(attr,as_dict=0)[0][0]
+
+        def get_attributes_IDs(self,name='%',as_dict=1):
+            # returns all matching IDs
+            name = name.replace('*','%')
+
+            ids = self.Query("select att_name,att_conf_id from att_conf " +
+                             "where att_name like '%s'"%get_search_model(name))
+            if not ids: return None
+            elif not as_dict: return ids
+            else: return dict(ids)
+
+        def get_attribute_names(self,active=False):
+            if not active:
+                return [a[0].lower() for a
+                    in self.Query('select att_name from att_conf')]
+            else:
+                return self.get_archived_attributes()
+
+        def get_attribute_modes(self,attr):
+            aid,tid,table = self.get_attr_id_type_table(attr)
+            return {'ID':aid, 'MODE_E':True}
+
+        def get_table_name(self,attr):
+            return get_attr_id_type_table(attr)
+
+        def get_attr_id_type_table(self, attr):
+            if fn.isNumber(attr):
+                where = 'att_conf_id = %s'%attr
+            else:
+
+                where = "att_name like '%s'" % get_search_model(attr)
+
+            q = "select att_conf_id, att_conf_data_type_id from att_conf where %s" % where if not self.cass else\
+                "select att_conf_id, data_type from att_conf where att_name = '%s' ALLOW FILTERING" % attr
+
+            ids = self.Query(q)
+            self.debug(str((q,ids)))
+            if not ids:
+                return None,None,''
+
+            aid,tid = ids[0]
+            table = self.Query("select data_type from att_conf_data_type "\
+                +"where att_conf_data_type_id = %s"%tid)[0][0] if not self.cass else tid
+            return aid,tid,'att_'+table
+
+        def set_attr_event_config(self,attr,polling=0,abs_event=0,
+                                  per_event=0,rel_event=0):
+            ac = get_attribute_config(attr)
+            raise Exception('@TODO')
+
+        #def get_default_archiving_modes(self,attr):
+            #if isString(attr) and '/' in attr:
+              #attr = read_attribute(attr)
+              #pytype = type(attr)
+
+        def get_attributes_by_table(self,table=''):
+            if table:
+              return self.Query("select att_name from att_conf,att_conf_data_type where data_type like '%s'"+
+                      " and att_conf.att_conf_data_type_id = att_conf_data_type.att_conf_data_type_id")
+            else:
+              types = self.Query("select data_type,att_conf_data_type_id from att_conf_data_type")
+              return dict((t,self.Query("select att_name from att_conf where att_conf_data_type_id = %s"%i))
+                          for t,i in types)
+
+        #@staticmethod
+        #def decimate_values(values,N=540,method=None):
+            #"""
+            #values must be a sorted (time,...) array
+            #it will be decimated in N equal time intervals
+            #if method is not provided, only the first value of each interval will be kept
+            #if method is given, it will be applied to buffer to choose the value to keep
+            #first value of buffer will always be the last value kept
+            #"""
+            #tmin,tmax = sorted((values[0][0],values[-1][0]))
+            #result,buff = [values[0]],[values[0]]
+            #interval = float(tmax-tmin)/N
+            #if not method:
+              #for v in values:
+                #if v[0]>=(interval+float(result[-1][0])):
+                  #result.append(v)
+            #else:
+              #for v in values:
+                #if v[0]>=(interval+float(result[-1][0])):
+                  #result.append(method(buff))
+                  #buff = [result[-1]]
+                #buff.append(v)
 
             #print(tmin,tmax,N,interval,len(values),len(result),method)
             #return result
