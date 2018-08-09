@@ -62,7 +62,7 @@ package_data = {
 }
 
 setup(
-    name="lib-alba-PyTangoArchiving",
+    name="lib-alba-pytangoarchiving",
     version=str(version),
     license=license,
     packages=find_packages(),
