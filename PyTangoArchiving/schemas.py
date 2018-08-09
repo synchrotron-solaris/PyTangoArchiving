@@ -117,6 +117,7 @@ class Schemas(object):
             if not hasattr(rd,'schema'): rd.schema = dct['schema']
 
         except Exception,e:
+            traceback.print_exc()
             print('getSchema(%s): failed!'%schema)
             if logger: 
                 exc = traceback.format_exc()

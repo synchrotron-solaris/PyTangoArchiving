@@ -225,7 +225,7 @@ class Reader(Object,SingletonMap):
     RetentionPeriod = 3*24*3600
     ExportPeriod = 600
     CacheTime = 600
-    DefaultSchemas = ['hdb','tdb',] #'snap',) 
+    DefaultSchemas = ['hdb','tdb'] #'snap',)
                      #'*','all') @TODO: Snap should be readable by Reader
     ValidArgs = ['db','config','servers','schema','timeout',
                  'log','logger','tango_host','alias_file']
@@ -256,8 +256,8 @@ class Reader(Object,SingletonMap):
             key = SingletonMap.parse_instance_key(cls,*p,**k)
         return key
             
-    def __init__(self,db='*',config='',servers = None, schema = None,
-                 timeout=300000,log='INFO',logger=None,tango_host=None,
+    def __init__(self,db='*',config='',servers = None, schema = "hdbpp",
+                 timeout=300000,log='DEBUG',logger=None,tango_host=None,
                  multihost=False,alias_file=''):
         '''@param config must be an string like user:passwd@host'''
         if not logger:
@@ -265,7 +265,10 @@ class Reader(Object,SingletonMap):
             self.log.setLogLevel(log)
         else: 
             self.log = logger
-        
+
+        # FIX THE HDBPP SCHEMA! MAY BE CONFLICT WHIT PYALARM!
+        schema = "hdbpp" if schema.__eq__("*") else schema
+
         self.configs = SortedDict()
         if schema is None: schema = db
         if schema is not None and db=='*': db = schema
@@ -322,7 +325,7 @@ class Reader(Object,SingletonMap):
             #Hdb++ classes will be scanned when searching for HDB
             tclasses = map(str.lower,fandango.get_database().get_class_list('*'))
             for s in Schemas.SCHEMAS:
-                if (s in self.DefaultSchemas 
+                if (s in self.DefaultSchemas
                       and any(c.startswith(s.lower()) for c in tclasses)):
                   self.configs[s] = Reader(s,logger=logger)
 
@@ -413,7 +416,10 @@ class Reader(Object,SingletonMap):
             if (host,db_name) not in self.dbs:
                 if self.is_hdbpp:
                     from PyTangoArchiving.hdbpp import HDBpp
-                    self.dbs[(host,db_name)] = HDBpp(db_name,host,user,passwd)
+                    _host = host.split(";")
+                    if len(_host) > 1:
+                        _host = [x for x in _host]
+                    self.dbs[(host, db_name)] = HDBpp(db_name, _host, user, passwd)
                 else: 
                     self.dbs[(host,db_name)] = ArchivingDB(db_name,host,user,passwd,loglevel=self.log.getLogLevel(),default_cursor=MySQLdb.cursors.SSCursor)
                 
