@@ -268,17 +268,31 @@ def get_failed(values):
         i+=1
     return [[time.ctime(d) for d in j] for j in failed]
         
+
 def data_has_changed(val,prv,nxt=None,t=300):
     """ 
     Method to calculate if decimation is needed, 
     any value that preceeds a change is considered a change
     any time increment above 300 seconds is considered a change
     """
-    return (val[1]!=prv[1] 
-                    or (nxt is not None and nxt[1]!=prv[1]) 
-                    or val[0]>(prv[0]+t))
+    return (val[1] != prv[1]
+            or (nxt is not None and nxt[1]!=prv[1])
+            or val[0] > (prv[0]+t))
 
-def decimation(history,method,window='0',logger_obj=None, N=1080):
+
+# DON'T USE
+# def datetime_to_float(d):
+#     epoch = datetime.datetime.utcfromtimestamp(0)
+#     total_seconds = (d - epoch).total_seconds()
+#     # total_seconds will be in decimals (millisecond precision)
+#     return total_seconds
+#
+#
+# def float_to_datetime(fl):
+#     return datetime.datetime.fromtimestamp(fl)
+
+
+def decimation(history, method, window='0', logger_obj=None, N=1080):
     """
     Nones and NaNs are always removed if this method is called
     
@@ -298,8 +312,8 @@ def decimation(history,method,window='0',logger_obj=None, N=1080):
         window = str2time(window or '0') 
     except: 
         window = 0
-        
-    start_date,stop_date = float(history[0][0]),float(history[-1][0])
+
+    start_date, stop_date = float(history[0][0]), float(history[-1][0])
 
     ## Decimation by data_has_changed is ALWAYS done
     if len(history): #method is not None

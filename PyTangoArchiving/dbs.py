@@ -39,7 +39,6 @@ except:
     raise Exception,'import FriendlyDB failed, is MySQLdb module installed?'
 
 
-
 class ArchivingDB(FriendlyDB):
     """ 
     Class for managing the direct access to the database 
