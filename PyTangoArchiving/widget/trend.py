@@ -645,7 +645,7 @@ def updateTrendBuffers(self,data,logger=None):
                 overlap = ((len(t) and numpy.max(t) or 0) > 
                             (len(self._xBuffer) and numpy.min(self._xBuffer) 
                                 or fn.END_OF_TIME ))
-                minstep = abs(t[-1] - t[0]) / 1081.
+                minstep = abs(float(t[-1]) - float(t[0])) / 1081.
                 logger.warning('In updateTrendBuffers('
                         '(%s - %s)[%d] \n\t+ (%s - %s)[%d],'
                         'fromHistoryBuffer=%s, minstep=%s, overlap=%s)' % (
