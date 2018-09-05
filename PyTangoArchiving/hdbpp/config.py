@@ -35,6 +35,8 @@ import MySQLdb,traceback,re
 
 __test__ = {}
 
+RETRY_MAX = 3
+
 
 def get_search_model(model):
     if model.count(':')<2:
@@ -55,7 +57,7 @@ def chose_backend(_backend):
         raise Exception("Backend not recognize")
 
 
-def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port='', backend="mysql"):
+def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port='', backend="mysql", retry=0):
 
     class HDBppClass(chose_backend(backend), SingletonMap):
 
@@ -892,6 +894,8 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
         return HDBppClass(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port)
     except Exception:
-        traceback.print_exc()
-        return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
-                     backend="cassandra" if backend is "mysql" else "mysql")
+        # traceback.print_exc()
+        retry += 1
+        if retry <= RETRY_MAX:
+            return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
+                         backend="cassandra" if backend is "mysql" else "mysql", retry=retry)
