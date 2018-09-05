@@ -530,14 +530,15 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
             return get_attr_id_type_table(attr)
 
         def get_attr_id_type_table(self, attr):
+
             if fn.isNumber(attr):
-                where = 'att_conf_id = %s'%attr
+                where = 'att_conf_id = %s' % attr
             else:
 
                 where = "att_name like '%s'" % get_search_model(attr)
 
             q = "select att_conf_id, att_conf_data_type_id from att_conf where %s" % where if not self.cass else\
-                "select att_conf_id, data_type from att_conf where att_name = '%s' ALLOW FILTERING" % attr
+                "select att_conf_id,data_type from att_conf where att_name='%s' ALLOW FILTERING" % get_normal_name(attr)
 
             ids = self.Query(q)
             self.debug(str((q,ids)))
