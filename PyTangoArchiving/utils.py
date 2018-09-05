@@ -338,7 +338,10 @@ def decimation(history, method, window='0', logger_obj=None, N=1080):
                     #and (i in (0,l0-1,l0-2) or 
                         #data_has_changed(history[i-1],v,history[i+1]))
                     ):
-                nv.append(v)
+
+                # ADD CASTING
+                tmp = (float(v[0]), v[1], v[2])
+                nv.append(tmp)
         t1 = time.time()
         trace('Removed %d (None,NaN, Rep) values in %fs'
               %(l0-len(nv),t1-t0))

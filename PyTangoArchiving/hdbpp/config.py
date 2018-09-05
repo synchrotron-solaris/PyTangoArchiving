@@ -666,8 +666,9 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
             what = 'UNIX_TIMESTAMP(data_time)' if unixtime else 'data_time'
 
+            # THIS DON'T WORK
             if as_double and not self.cass:
-                what = 'CAST(%s as DOUBLE)' % what
+                what = 'CAST(%s AS DECIMAL(16,6))' % what
             else:
                 what = 'data_time'
 
