@@ -148,6 +148,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
             if not getattr(self,'manager',None):
                 db_name = db_name or getattr(self,'db_name','')
                 self.manager = ''
+
                 managers = self.get_all_managers()
                 for m in managers:
                     if db_name:
@@ -896,7 +897,6 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
         return HDBppClass(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port)
     except Exception:
-        # traceback.print_exc()
         retry += 1
         if retry <= RETRY_MAX:
             return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
