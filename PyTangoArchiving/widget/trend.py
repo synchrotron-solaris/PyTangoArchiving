@@ -806,7 +806,7 @@ def getArchivedTrendValues(trend_set,model,start_date=0,stop_date=None,
             logger_obj.warning('Archiving readings not available!')
             logger_obj.setLastArgs(model)
             return []
-        if not reader.is_attribute_archived(attribute): #Cached check
+        if not reader.is_attribute_archived(model): #Cached check
             if model not in logger_obj.last_args: 
                 logger('%s: attribute %s is not archived'%(time.ctime(),attribute))
             logger_obj.setLastArgs(model)
