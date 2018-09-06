@@ -157,7 +157,9 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                             prop = str(get_device_property(m,'LibConfiguration'))
                     if not db_name or db_name in prop:
                         self.manager = m
-                        break
+                        dp = get_device(self.manager) if self.manager else None
+                        if check_device(dp):
+                            return dp
 
             dp = get_device(self.manager) if self.manager else None
             return check_device(dp) and dp
