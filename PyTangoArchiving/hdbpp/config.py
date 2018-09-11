@@ -35,6 +35,8 @@ import MySQLdb,traceback,re
 
 __test__ = {}
 
+RETRY_MAX = 3
+
 
 def get_search_model(model):
     if model.count(':')<2:
@@ -55,7 +57,7 @@ def chose_backend(_backend):
         raise Exception("Backend not recognize")
 
 
-def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port='', backend="mysql"):
+def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port='', backend="mysql", retry=0):
 
     class HDBppClass(chose_backend(backend), SingletonMap):
 
@@ -85,7 +87,6 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                     sch = Schemas.getSchema(db_name)
                     if sch:
                         print('HDBpp(): Loading from Schemas')
-                        print(sch)
                         db_name = sch.get('dbname',sch.get('db_name'))
                         host = host or sch.get('host')
                         user = user or sch.get('user')
@@ -127,6 +128,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                 db_name,host,user,passwd = \
                     [config.get(k) for k in 'dbname host user password'.split()]
             else:
+
                 db_name = get_device_property(manager,'DbName') or ''
                 host = get_device_property(manager,'DbHost') or ''
                 user = get_device_property(manager,'DbUser') or ''
@@ -146,6 +148,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
             if not getattr(self,'manager',None):
                 db_name = db_name or getattr(self,'db_name','')
                 self.manager = ''
+
                 managers = self.get_all_managers()
                 for m in managers:
                     if db_name:
@@ -154,9 +157,12 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                             prop = str(get_device_property(m,'LibConfiguration'))
                     if not db_name or db_name in prop:
                         self.manager = m
-                        break
+                        dp = get_device(self.manager) if self.manager else None
+                        if check_device(dp):
+                            return dp
 
-            return get_device(self.manager) if self.manager else None
+            dp = get_device(self.manager) if self.manager else None
+            return check_device(dp) and dp
 
         @Cached(depth=10,expire=60.)
         def get_archived_attributes(self,search=''):
@@ -238,22 +244,38 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                         return k
             return None
 
-        def start_servers(self,host=''):
+        def start_servers(self, host='', restart=True):
             import fandango.servers
             if not self.manager: self.get_manager()
             astor = fandango.servers.Astor(self.manager)
-            astor.start_servers(host=(host or self.db_host))
+            if restart:
+                astor.stop_servers()
+                time.sleep(10.)
+            print('Starting manager ...')
+            astor.start_servers(host=(host or self.host))
             time.sleep(1.)
-            astor.load_from_devs_list(self.get_archivers())
-            astor.start_servers(host=(host or self.db_host))
 
-        def start_devices(self,regexp = '*', force = False, do_init = False):
-            devs = fn.tango.get_class_devices('HdbEventSubscriber')
+            astor = fandango.servers.Astor()
+            devs = self.get_archivers()
+            astor.load_from_devs_list(devs)
+            if restart:
+                astor.stop_servers()
+                time.sleep(10.)
+            print('Starting archivers ...')
+            astor.start_servers(host=(host or self.host))
+            time.sleep(3.)
+            self.start_devices(force=True)
+
+        def start_devices(self,regexp = '*', force = False,
+                          do_init = False, do_restart = False):
+            #devs = fn.tango.get_class_devices('HdbEventSubscriber')
+            devs = self.get_archivers()
             if regexp:
                 devs = fn.filtersmart(devs,regexp)
             off = sorted(set(d for d in devs if not fn.check_device(d)))
 
-            if off:
+            if off and do_restart:
+                print('Restarting %s Archiving Servers ...'%self.db_name)
                 astor = fn.Astor()
                 astor.load_from_devs_list(list(off))
                 astor.stop_servers()
@@ -268,6 +290,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                         dp.init()
                     if force or dp.attributenumber != dp.attributestartednumber:
                         off.append(d)
+                        print('%s.Start()' % d)
                         dp.start()
                 except Exception,e:
                     self.warning('start_archivers(%s) failed: %s' % (d,e))
@@ -402,7 +425,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
               if start:
                   try:
                     arch = archiver # self.get_attribute_archiver(attribute)
-                    self.warning('%s.Start()' % (arch))
+                    self.info('%s.Start()' % (arch))
                     fn.get_device(arch).Start()
                   except:
                     traceback.print_exc()
@@ -422,23 +445,26 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
         def is_attribute_archived(self,attribute,active=None,cached=True):
             # @TODO active argument not implemented
-            model = parse_tango_model(attribute,fqdn=True)
-            if cached:
+            model = parse_tango_model(attribute, fqdn=True)
+            d = self.get_manager()
+            if d and cached:
                 self.get_archived_attributes()
-                if any(m in self.attributes for m in (attribute,model.fullname,model.normalname)):
+                if any(m in self.attributes for m in (attribute, model.fullname, model.normalname)):
                     return model.fullname
                 else:
                     return False
-            else:
-                d = self.get_manager()
+            elif d:
                 attributes = d.AttributeSearch(model.fullname)
                 a = [a for a in attributes if a.lower().endswith(attribute.lower())]
-                if len(attributes)>1:
+                if len(attributes) > 1:
                     raise Exception('MultipleAttributesMatched!')
-                if len(attributes)==1:
+                if len(attributes) == 1:
                     return attributes[0]
                 else:
                     return False
+            else:
+                return any(a.lower().endswith('/' + attribute.lower())
+                                              for a in self.get_attributes())
 
         def start_archiving(self,attribute,archiver,period=0,
                           rel_event=None,per_event=300000,abs_event=None,
@@ -507,14 +533,15 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
             return get_attr_id_type_table(attr)
 
         def get_attr_id_type_table(self, attr):
+
             if fn.isNumber(attr):
-                where = 'att_conf_id = %s'%attr
+                where = 'att_conf_id = %s' % attr
             else:
 
                 where = "att_name like '%s'" % get_search_model(attr)
 
             q = "select att_conf_id, att_conf_data_type_id from att_conf where %s" % where if not self.cass else\
-                "select att_conf_id, data_type from att_conf where att_name = '%s' ALLOW FILTERING" % attr
+                "select att_conf_id,data_type from att_conf where att_name='%s' ALLOW FILTERING" % get_normal_name(attr)
 
             ids = self.Query(q)
             self.debug(str((q,ids)))
@@ -592,7 +619,6 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                     "where att_conf_id = 1 and data_time between '%s' and '%s' "
                     "and (data_time %% 5) < 2;"%(s,fn.time2str(h+3600)))
 
-
         def get_last_attribute_values(self,table,n=1,check_table=False):
             vals = self.get_attribute_values(table,N=n,human=True,desc=True)
             if len(vals) and abs(n)==1: return vals[0]
@@ -628,7 +654,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
             start_date and stop_date must be in a format valid for SQL
             """
             t0 = time.time()
-            self.warning('HDBpp.get_attribute_values(%s,%s,%s,%s,decimate=%s,%s)'
+            self.debug('HDBpp.get_attribute_values(%s,%s,%s,%s,decimate=%s,%s)'
                   %(table,start_date,stop_date,N,decimate,kwargs))
             if fn.isSequence(table):
                 aid,tid,table = table
@@ -643,8 +669,9 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
             what = 'UNIX_TIMESTAMP(data_time)' if unixtime else 'data_time'
 
+            # THIS DON'T WORK
             if as_double and not self.cass:
-                what = 'CAST(%s as DOUBLE)' % what
+                what = 'CAST(%s AS DECIMAL(16,6))' % what
             else:
                 what = 'data_time'
 
@@ -721,8 +748,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                     #for k,l in result:
                         #print((k,l and len(l)))
                     result = result[-N:]
-                self.warning('array arranged [%d] in %f s'
-                             % (len(result),time.time()-t0))
+                self.debug('array arranged [%d] in %f s' % (len(result),time.time()-t0))
                 t0 = time.time()
 
             # Converting the timestamp from Decimal to float
@@ -743,9 +769,9 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                 #for i,t in enumerate(result):
                     #result[i] = ([float(t[0])]+t[1:])
 
-            self.warning('timestamp arranged [%d] in %f s'
+            self.debug('timestamp arranged [%d] in %f s'
                          % (len(result),time.time()-t0))
-            # t0 = time.time()
+            t0 = time.time()
 
             # Decimation to be done in Reader object
             #if decimate:
@@ -778,7 +804,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                 else:
                     self.getSession()
 
-            self.warning('result arranged [%d]'%len(result))
+            self.debug('result arranged [%d]'%len(result))
             return result
 
         def get_attributes_values(self,tables='',start_date=None,stop_date=None,
@@ -803,10 +829,77 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
                               % ( table, aid) + where)
             return r[0][0] if r else 0
 
+        def get_failed_attributes(self, t=7200):
+            vals = self.load_last_values(self.get_attributes())
+            nones = [k for k, v in vals.items()
+                     if (not v or v[1] is None)]
+            nones = [k for k in nones if fn.read_attribute(k) is not None]
+            lost = [k for k, v in vals.items()
+                    if k not in nones and v[0] < fn.now() - t]
+            lost = [k for k in lost if fn.read_attribute(k) is not None]
+            failed = nones + lost
+            return sorted(failed)
+
+        def restart_attribute(self, attr):
+            d = self.get_attribute_archiver(attr)
+            print('%s.restart_attribute(%s)' % (d, attr))
+            dp = fn.get_device(d, keep=True)
+            dp.AttributeStop(attr)
+            fn.wait(.1)
+            dp.AttributeStart(attr)
+
+        def restart_attributes(self, attributes=None):
+            if attributes is None:
+                attributes = self.get_failed_attributes()
+
+            for a in sorted(attributes):
+                self.restart_attribute(a)
+
+            print('%d attributes restarted' % len(attributes))
+
+        def check_attributes(self, attrs='', load=False, t0=0):
+
+            db, t0, result, vals = self, t0 or fn.now(), {}, {}
+            print('Checking %s' % str(db))
+
+            if fn.isMapping(attrs):
+                attrs, vals = attrs.keys(), attrs
+                if isinstance(vals.values()[0], dict):
+                    vals = dict((k, v.values()[0]) for k, v in vals.items())
+            else:
+                if fn.isString(attrs):
+                    attrs = fn.filtersmart(db.get_attributes(), attrs)
+                    load = True
+
+            if load:
+                [vals.update(db.load_last_values(a)) for a in attrs]
+
+            print('\t%d attributes' % len(attrs))
+            result['attrs'] = attrs
+            result['vals'] = vals
+            result['novals'] = [a for a, v in vals.items() if not v]
+            result['nones'], result['down'], result['lost'] = [], [], []
+            for a, v in vals.items():
+                if not v or [1] is None:
+                    if not fn.read_attribute(a):  # USE read not check!!
+                        result['down'].append(a)
+                    else:
+                        result['novals' if not v else 'nones'].append(a)
+                elif v[0] < (t0 - 7200):
+                    result['lost'].append(a)
+
+            print('\t%d attributes have no values' % len(result['novals']))
+            print('\t%d attributes are not readable' % len(result['down']))
+            print('\t%d attributes are not updated' % len(result['lost']))
+            print('\t%d attributes have None values' % len(result['nones']))
+
+            return result
+
     try:
 
         return HDBppClass(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port)
     except Exception:
-
-        return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
-                     backend="cassandra" if backend is "mysql" else "mysql")
+        retry += 1
+        if retry <= RETRY_MAX:
+            return HDBpp(db_name=db_name, host=host, user=user, passwd=passwd, manager=manager, other=None, port=port,
+                         backend="cassandra" if backend is "mysql" else "mysql", retry=retry)

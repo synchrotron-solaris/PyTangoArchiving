@@ -110,4 +110,11 @@ class CassandraPyTangoArchivingTest(unittest.TestCase):
 
 if __name__ == '__main__':
 
-    unittest.main()
+    # unittest.main()
+
+    import PyTangoArchiving as pta
+
+    rd = pta.Reader()
+    attribute_value = rd.get_attribute_values('r1-all/dia/r1-all-dia-bim1/beamcurrent', start_date='2018-09-04 3:00',
+                                              stop_date="2018-09-04 13:42")[-1]
+    print(attribute_value)
