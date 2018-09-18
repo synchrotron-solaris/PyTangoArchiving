@@ -508,6 +508,7 @@ def HDBpp(db_name='', host='', user='', passwd='', manager='', other=None, port=
 
                 return self.get_attribute_IDs(attr,as_dict=0)[0][0]
 
+        # TO-DO: DON'T WORK
         def get_attributes_IDs(self,name='%',as_dict=1):
             # returns all matching IDs
             name = name.replace('*','%')
