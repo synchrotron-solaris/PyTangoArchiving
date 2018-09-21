@@ -500,6 +500,7 @@ def emitHistoryChanged(trend_set):
         t.info('PyTangoArchiving.Reader.forceReplot()')
         t._dirtyPlot = True
         t.doReplot()
+        t.useArchiving = False
     trend_set._historyChangedSignal = Qt.QTimer.singleShot(1500,forceReplot)
     
 def get_history_buffer_from_model(trend_set,model):
